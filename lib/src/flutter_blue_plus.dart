@@ -7,12 +7,13 @@ part of flutter_blue_plus;
 class FlutterBluePlus {
   final MethodChannel _channel =
       const MethodChannel('flutter_blue_plus/methods');
-  final EventChannel _stateChannel =
+  late  EventChannel? _stateChannel =
       const EventChannel('flutter_blue_plus/state');
   final StreamController<MethodCall> _methodStreamController =
       StreamController.broadcast(); // ignore: close_sinks
   Stream<MethodCall> get _methodStream => _methodStreamController
       .stream; // Used internally to dispatch methods from platform.
+  late Stream<BluetoothState>? _stateStream;
 
   /// Singleton boilerplate
   FlutterBluePlus._() {
@@ -23,9 +24,12 @@ class FlutterBluePlus {
     setLogLevel(logLevel);
   }
 
-  static final FlutterBluePlus _instance = FlutterBluePlus._();
+  static late  FlutterBluePlus _instance = FlutterBluePlus._();
   static FlutterBluePlus get instance => _instance;
 
+  static reinitialize() {
+    _instance = FlutterBluePlus._();
+  }
   /// Log level of the instance, default is all messages (debug).
   LogLevel _logLevel = LogLevel.debug;
   LogLevel get logLevel => _logLevel;
@@ -83,10 +87,11 @@ class FlutterBluePlus {
         .then((buffer) => protos.BluetoothState.fromBuffer(buffer))
         .then((s) => BluetoothState.values[s.state.value]);
 
-    yield* _stateChannel
-        .receiveBroadcastStream()
+    _stateStream ??= _stateChannel
+        ?.receiveBroadcastStream()
         .map((buffer) => protos.BluetoothState.fromBuffer(buffer))
-        .map((s) => BluetoothState.values[s.state.value]);
+        .map((s) => BluetoothState.values[s.state.value]).doOnCancel(() => _stateChannel = null);
+    yield* _stateStream!;
   }
 
   /// Retrieve a list of connected devices
@@ -171,7 +176,9 @@ class FlutterBluePlus {
       return result;
     });
   }
-
+  Future<dynamic> initWithDelegate() {
+    return _channel.invokeMethod('initWithDelegate', {});
+  }
   /// Starts a scan and returns a future that will complete once the scan has finished.
   ///
   /// Once a scan is started, call [stopScan] to stop the scan and complete the returned future.
